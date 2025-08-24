@@ -15,7 +15,7 @@ int main()
     client.send(client_id, 1, make_object<getMe>());
     while (true)
     {
-        auto response = client.receive(10.0);
+        auto response = client.receive(3.0);
         if (!response.object) continue;
         if (response.request_id == 0)
         {
@@ -49,7 +49,7 @@ int main()
                             std::string phoneNumber;
                             std::cout << "\nInput phone number: ";
                             std::cin >> phoneNumber;
-                            client.send(client_id, 1, make_object<td::td_api::setAuthenticationPhoneNumber>(phoneNumber));
+                            client.send(client_id, 1, make_object<td::td_api::setAuthenticationPhoneNumber>(phoneNumber, nullptr));
                             break;
                         }
                     case td::td_api::authorizationStateWaitCode::ID:
