@@ -1,6 +1,7 @@
 #include <iostream>
+#include <fstream>
 #include <algorithm>
-#include <limits>
+#include <limits> //для numeric_limits
 #include <td/telegram/td_api.h>
 #include <td/telegram/Client.h>
 using namespace td;
@@ -10,9 +11,10 @@ int main()
 {
     td::ClientManager client;
     auto client_id = client.create_client_id();
+    client.send(client_id, 12345, make_object<setLogVerbosityLevel>(0));
 
     auto parametrs = make_object<td::td_api::setTdlibParameters>();
-    parametrs -> database_directory_ = "./dataSession";
+    parametrs -> database_directory_ = "/home/ivanoaof/tgcleansing/dataSession";
     parametrs -> use_message_database_ = true;
     parametrs -> use_secret_chats_ = true;
     parametrs -> system_language_code_ = "en";
@@ -29,8 +31,8 @@ int main()
     getline(std::cin, parametrs -> api_hash_);
 
     client.send(client_id, 1, std::move(parametrs));
-
-    while (true)
+    bool authorized = false;
+    while (!authorized)
     {
         auto response = client.receive(5.0);
 
@@ -53,7 +55,7 @@ int main()
                             settings ->allow_flash_call_ = false;
                             settings -> allow_sms_retriever_api_= false;
 
-                            client.send(client_id, 2, make_object<setAuthenticationPhoneNumber>(phoneNumber, nullptr));
+                            client.send(client_id, 2, make_object<setAuthenticationPhoneNumber>(phoneNumber, std::move(settings)));
                             break;
                     }
                     case authorizationStateWaitCode::ID:
@@ -75,10 +77,11 @@ int main()
                     case authorizationStateReady::ID:
                         {
                             std::cout << "\nAuthorization completed!" << std::endl;
-                            client.send(client_id, 5, make_object<getMe>());
+                            client.send(client_id, 6, make_object<getChats>(nullptr, 100));
+                            authorized = true;
                             break;
                         }
-                case authorizationStateClosed::ID:
+                    case authorizationStateClosed::ID:
                         {
                             std::cout << "\n Connection closed. Restart the program." << std::endl;
                             return 1;
@@ -92,5 +95,30 @@ int main()
                 }
             }
         }
+
+    std::ofstream file("/home/ivanoaof/tgcleansing/ids.txt");
+    while (true)
+    {
+        auto response = client.receive(5.0);
+        if (!response.object) continue;
+        if (response.object -> get_id() == chats::ID)
+        {
+            auto chats_id = move_object_as<chats>(response.object);
+            if (!chats_id) continue;
+            std::cout << "Chats id: " << std::endl;
+            for (auto id: chats_id -> chat_ids_)
+            {
+                client.send(client_id, 7, make_object<getChat>(id));
+                auto query = client.receive(5.0);
+                auto chatinfo = move_object_as<chat>(query.object);
+                if (chatinfo && chatinfo != nullptr && chatinfo -> type_ -> get_id() == chatTypeBasicGroup::ID || chatinfo -> type_ -> get_id() == chatTypePrivate::ID)
+                {
+                    std::cout << id << std::endl;
+                    file << id << " " << chatinfo -> title_ << std::endl;
+                }
+            }
+            break;
+        }
+    }
     return 0;
 }
