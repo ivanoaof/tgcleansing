@@ -1,30 +1,52 @@
 #include <iostream>
 #include <fstream>
 #include <algorithm>
-#include <limits> //для numeric_limits
 #include <filesystem>
 #include <td/telegram/td_api.h>
 #include <td/telegram/Client.h>
+#include <nlohmann/json.hpp>
+
 using namespace td;
 using namespace td_api;
+using json = nlohmann::json;
 
 /* env function */
-std::string read_key(const std::string& path)
+struct Config
 {
-    std::ifstream file(path);
+    int api_id;
+    std::string api_hash;
     std::string key;
-    if (!file)
-    {
-        std::cout << "Password for database: ";
-        getline(std::cin, key);
-        std::ofstream save(path);
-        save << key << std::endl;
-    }else
-    {
-        std::getline(file, key);
-    }
+};
 
-    return key;
+Config load_config(const std::string& filepath = "config.json")
+{
+    Config config;
+    std::ifstream in_file(filepath);
+    if (!in_file)
+    {
+        std::cout << "Password for database: " << std::endl;
+        std::cin >> config.key;
+        std::cout << "Input api_id: " << std::endl;
+        std::cin >> config.api_id;
+        std::cout << "Input api_hash: " << std::endl;
+        std::cin >> config.api_hash;
+
+        json j;
+        j["database_key"] = config.key;
+        j["api_id"] = config.api_id;
+        j["api_hash"] = config.api_hash;
+        std::ofstream output(filepath);
+        output << j.dump(4);
+        std::cout << "Config saved" << std::endl;
+    } else
+    {
+        json j;
+        in_file >> j;
+        config.api_id = j["api_id"];
+        config.api_hash = j["api_hash"];
+        config.key = j["database_key"];
+    }
+    return config;
 }
 
 int main()
@@ -33,7 +55,7 @@ int main()
     auto client_id = client.create_client_id();
     client.send(client_id, 12345, make_object<setLogVerbosityLevel>(0));
     auto parametrs = make_object<td::td_api::setTdlibParameters>();
-    const auto key_value = read_key(std::filesystem::current_path() / "env.txt");
+    Config config_ = load_config();
 
     parametrs -> database_directory_ = "/home/ivanoaof/tgcleansing/dataSession";
     parametrs -> use_message_database_ = true;
@@ -42,15 +64,9 @@ int main()
     parametrs -> device_model_ = "PC";
     parametrs -> system_version_ = "TGCleaner";
     parametrs -> application_version_ = "1.0";
-    parametrs -> database_encryption_key_ = key_value;
-    std::cout << "Input api_id: ";
-    int api_id;
-    std::cin >> api_id;
-    parametrs -> api_id_ = api_id;
-
-    std::cout << "Input api_hash: ";
-    std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n'); //нужна очистка буфера после cin
-    getline(std::cin, parametrs -> api_hash_);
+    parametrs -> database_encryption_key_ = config_.key;
+    parametrs -> api_id_ = config_.api_id;
+    parametrs -> api_hash_ = config_.api_hash;
 
     client.send(client_id, 1, std::move(parametrs));
     bool authorized = false;
@@ -99,7 +115,7 @@ int main()
                     case authorizationStateReady::ID:
                         {
                             std::cout << "\nAuthorization completed!" << std::endl;
-                            client.send(client_id, 6, make_object<getChats>(nullptr, 100));
+                            client.send(client_id, 6, make_object<getChats>(nullptr, 100000));
                             authorized = true;
                             break;
                         }
@@ -133,9 +149,9 @@ int main()
                 client.send(client_id, 7, make_object<getChat>(id));
                 auto query = client.receive(5.0);
                 auto chatinfo = move_object_as<chat>(query.object);
-                if (chatinfo && chatinfo != nullptr && chatinfo -> type_ -> get_id() == chatTypeBasicGroup::ID || chatinfo -> type_ -> get_id() == chatTypePrivate::ID)
+                if (chatinfo && chatinfo != nullptr && chatinfo -> type_ -> get_id() == chatTypeBasicGroup::ID || chatinfo -> type_ -> get_id() == chatTypePrivate::ID || chatinfo -> type_ -> get_id() == chatTypeSupergroup::ID || chatinfo -> type_ -> get_id() == chatTypeSecret::ID)
                 {
-                    std::cout << id << std::endl;
+                    std::cout << id << " " << chatinfo -> title_ << std::endl;
                     file << id << " " << chatinfo -> title_ << std::endl;
                 }
             }
