@@ -2,18 +2,39 @@
 #include <fstream>
 #include <algorithm>
 #include <limits> //для numeric_limits
+#include <filesystem>
 #include <td/telegram/td_api.h>
 #include <td/telegram/Client.h>
 using namespace td;
 using namespace td_api;
+
+/* env function */
+std::string read_key(const std::string& path)
+{
+    std::ifstream file(path);
+    std::string key;
+    if (!file)
+    {
+        std::cout << "Password for database: ";
+        getline(std::cin, key);
+        std::ofstream save(path);
+        save << key << std::endl;
+    }else
+    {
+        std::getline(file, key);
+    }
+
+    return key;
+}
 
 int main()
 {
     td::ClientManager client;
     auto client_id = client.create_client_id();
     client.send(client_id, 12345, make_object<setLogVerbosityLevel>(0));
-
     auto parametrs = make_object<td::td_api::setTdlibParameters>();
+    const auto key_value = read_key(std::filesystem::current_path() / "env.txt");
+
     parametrs -> database_directory_ = "/home/ivanoaof/tgcleansing/dataSession";
     parametrs -> use_message_database_ = true;
     parametrs -> use_secret_chats_ = true;
@@ -21,12 +42,13 @@ int main()
     parametrs -> device_model_ = "PC";
     parametrs -> system_version_ = "TGCleaner";
     parametrs -> application_version_ = "1.0";
+    parametrs -> database_encryption_key_ = key_value;
     std::cout << "Input api_id: ";
     int api_id;
     std::cin >> api_id;
     parametrs -> api_id_ = api_id;
 
-    std::cout << "\nInput api_hash: ";
+    std::cout << "Input api_hash: ";
     std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n'); //нужна очистка буфера после cin
     getline(std::cin, parametrs -> api_hash_);
 
@@ -41,7 +63,7 @@ int main()
         {
             if (response.object -> get_id() == updateAuthorizationState::ID)
             {
-                // получаем объект конкретного типа. теперь updateAuthState это умный указатель
+                /* получаем объект конкретного типа. теперь updateAuthState это умный указатель */
                 auto updateAuthState = move_object_as<updateAuthorizationState>(response.object);
                 switch (updateAuthState -> authorization_state_ -> get_id())
                 {
