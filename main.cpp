@@ -11,7 +11,6 @@ using namespace td;
 using namespace td_api;
 using json = nlohmann::json;
 
-/* env function */
 struct Config
 {
     int api_id;
