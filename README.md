@@ -1,4 +1,4 @@
-#Tgcleaner
+# TgСleaner
 
  > A program for clearing message history in selected Telegram chats, written in C++ using **TDLib**.
 
