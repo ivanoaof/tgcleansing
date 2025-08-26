@@ -49,14 +49,26 @@ Config load_config(const std::string& filepath = "config.json")
     return config;
 }
 
+struct list_of_chats
+{
+    int count;
+    int64_t chat_id;
+    std::string name;
+    list_of_chats(int c, int64_t id, std::string n): count(c), chat_id(id), name(n){}
+};
+
 int main()
 {
     td::ClientManager client;
-    auto client_id = client.create_client_id();
-    client.send(client_id, 12345, make_object<setLogVerbosityLevel>(0));
+    int32_t client_id;
+    client.send(client_id = client.create_client_id(), 12345, make_object<setLogVerbosityLevel>(0));
+
     auto parametrs = make_object<td::td_api::setTdlibParameters>();
     Config config_ = load_config();
 
+    std::vector<list_of_chats> arr;
+    int count = 0;
+    /* данные клиента */
     parametrs -> database_directory_ = "/home/ivanoaof/tgcleansing/dataSession";
     parametrs -> use_message_database_ = true;
     parametrs -> use_secret_chats_ = true;
@@ -69,6 +81,7 @@ int main()
     parametrs -> api_hash_ = config_.api_hash;
 
     client.send(client_id, 1, std::move(parametrs));
+    /*авторизация */
     bool authorized = false;
     while (!authorized)
     {
@@ -90,7 +103,7 @@ int main()
                             std::getline(std::cin, phoneNumber);
 
                             auto settings = make_object<phoneNumberAuthenticationSettings>();
-                            settings ->allow_flash_call_ = false;
+                            settings -> allow_flash_call_ = false;
                             settings -> allow_sms_retriever_api_= false;
 
                             client.send(client_id, 2, make_object<setAuthenticationPhoneNumber>(phoneNumber, std::move(settings)));
@@ -114,7 +127,7 @@ int main()
                         }
                     case authorizationStateReady::ID:
                         {
-                            std::cout << "\nAuthorization completed!" << std::endl;
+                            std::cout << "\nAuthorization completed!\n" << std::endl;
                             client.send(client_id, 6, make_object<getChats>(nullptr, 100000));
                             authorized = true;
                             break;
@@ -134,16 +147,15 @@ int main()
             }
         }
 
-    std::ofstream file("/home/ivanoaof/tgcleansing/ids.txt");
     while (true)
     {
+        /* в authorizationStateReady сделал send getChats, поэтому сразу прописал receive */
         auto response = client.receive(5.0);
         if (!response.object) continue;
         if (response.object -> get_id() == chats::ID)
         {
             auto chats_id = move_object_as<chats>(response.object);
             if (!chats_id) continue;
-            std::cout << "Chats id: " << std::endl;
             for (auto id: chats_id -> chat_ids_)
             {
                 client.send(client_id, 7, make_object<getChat>(id));
@@ -151,11 +163,42 @@ int main()
                 auto chatinfo = move_object_as<chat>(query.object);
                 if (chatinfo && chatinfo != nullptr && chatinfo -> type_ -> get_id() == chatTypeBasicGroup::ID || chatinfo -> type_ -> get_id() == chatTypePrivate::ID || chatinfo -> type_ -> get_id() == chatTypeSupergroup::ID || chatinfo -> type_ -> get_id() == chatTypeSecret::ID)
                 {
-                    std::cout << id << " " << chatinfo -> title_ << std::endl;
-                    file << id << " " << chatinfo -> title_ << std::endl;
+                    ++count;
+                    std::cout << "Chats id: " << std::endl;
+                    std::cout << count << " " << id << " " << chatinfo -> title_ << std::endl;
+                    list_of_chats chat(count, id, chatinfo -> title_);
+                    arr.push_back(chat);
                 }
             }
             break;
+        }
+    }
+
+    int choice;
+    std::cout << "Select chat to clear: " << std::endl;
+    std::cin >> choice;
+
+    std::vector<int64_t> messages_id; //пачка сообщений, так меньше сетевых запросов.
+    int64_t chat_id = arr[choice - 1].chat_id;
+    int64_t from_msg_id = 0; //0 значит идем с последнего сообщения
+
+    while (true)
+    {
+        client.send(client_id, 8, make_object<getChatHistory>(chat_id, from_msg_id, 0, 100, false));
+        auto response = client.receive(5.0);
+        if (!response.object) continue;
+        if (response.object -> get_id() == messages::ID)
+        {
+            auto msg_ids = move_object_as<messages>(response.object);
+            if (msg_ids -> messages_.empty()) { std::cout << "Сhat cleared!" << std::endl; break; }; //если пачка пуста выходим из цикла
+
+            for (auto &i: msg_ids -> messages_)
+            {
+                messages_id.push_back(i -> id_);
+                std::cout << i -> id_ << std::endl;
+            }
+            client.send(client_id, 9, make_object<deleteMessages>(chat_id, std::move(messages_id), true));
+            from_msg_id = msg_ids -> messages_.back() -> id_; //берем id последнего сообщения в пачке (пон)
         }
     }
     return 0;
