@@ -125,7 +125,8 @@ bool authorization (ClientManager &client, int32_t client_id, Config config_)
                     }
                     case authorizationStateWaitCode::ID:
                         {
-                            while (true){
+                            while (true)
+                                {
                                 try
                                 {
                                     std::string code;
@@ -140,7 +141,7 @@ bool authorization (ClientManager &client, int32_t client_id, Config config_)
                                     client.send(client_id, 3, make_object<checkAuthenticationCode>(code));
                                     break;
                                 } catch (const std::exception& e) { std::cout << e.what() << "Try again!" << std::endl; }
-                            }
+                                }
                             break;
                         }
                     case authorizationStateWaitPassword::ID:
@@ -225,35 +226,19 @@ std::vector<std::unique_ptr<list_of_chats>> get_chats(ClientManager &client, int
     return arr;
 }
 
-void delete_messages(ClientManager &client, int32_t client_id, std::vector<std::unique_ptr<list_of_chats>> &arr, int choice, int64_t my_user_id)
+void delete_messages(ClientManager &client, int32_t client_id, int64_t chat_id, int64_t my_user_id)
 {
-    int64_t chat_id = arr[choice - 1]->chat_id;
-    int64_t from_msg_id = 0;
     int count = 0;
-
-    bool can_delete_all = false;
-    auto sender = make_object<messageSenderUser>(my_user_id);
-    client.send(client_id, 10, make_object<getChatMember>(chat_id, std::move(sender)));
-    auto member_response = client.receive(5.0);
-
-    if (member_response.object && member_response.object->get_id() == chatMember::ID) {
-        auto member = move_object_as<chatMember>(member_response.object);
-        if (member->status_->get_id() == chatMemberStatusAdministrator::ID || member->status_->get_id() == chatMemberStatusCreator::ID)
-            {
-            can_delete_all = true;
-            }
-    }
-
     while (true)
     {
         std::vector<int64_t> messages_id;
-        client.send(client_id, 8, make_object<getChatHistory>(chat_id, from_msg_id, 0, 100, false));
+        auto sender = make_object<messageSenderUser>(my_user_id);
+        auto user = move_object_as<MessageSender>(sender);
+        client.send(client_id, 8, make_object<searchChatMessages>(chat_id, nullptr, "", std::move(user), 0, 0, 100, nullptr));
         auto response = client.receive(5.0);
-
         if (!response.object)
         {
-            ++count;
-            if (count > 5)
+            ++count; if (count > 5)
             {
                 std::cout << "Timeout or no messages." << std::endl;
                 break;
@@ -262,39 +247,27 @@ void delete_messages(ClientManager &client, int32_t client_id, std::vector<std::
         }
         count = 0;
 
-        if (response.object->get_id() == messages::ID)
+        if (response.object->get_id() != foundChatMessages::ID) continue;
+        auto msg_ids = move_object_as<foundChatMessages>(response.object);
+        if (msg_ids->messages_.empty())
         {
-            auto msg_ids = move_object_as<messages>(response.object);
-            if (msg_ids->messages_.empty())
-            {
-                std::cout << "Chat cleared!" << std::endl;
-                break;
-            }
-
-            for (auto &msg : msg_ids->messages_)
-            {
-                if (can_delete_all) {
-                    messages_id.push_back(msg->id_);
-                } else if (msg->sender_id_->get_id() == messageSenderUser::ID) {
-                    auto sender = static_cast<messageSenderUser*>(msg->sender_id_.get());
-                    if (sender->user_id_ == my_user_id) {
-                        messages_id.push_back(msg->id_);
-                    }
-                }
-            }
-
-            if (!messages_id.empty())
-                client.send(client_id, 9, make_object<deleteMessages>(chat_id, std::move(messages_id), true));
-
-            from_msg_id = msg_ids->messages_.back()->id_;
+            std::cout << "Chat cleared!" << std::endl;
+            break;
         }
-        else
+
+        for (auto &msg : msg_ids->messages_)
         {
-            std::cout << "Received unexpected object id: " << response.object->get_id() << std::endl;
+            messages_id.push_back(msg->id_);
         }
+
+        if (!messages_id.empty())
+        {
+            client.send(client_id, 9, make_object<deleteMessages>(chat_id, std::move(messages_id), true));
+            client.receive(5.0);
+        }
+        std::cout << "Deleted " << messages_id.size() << " messages" << std::endl;
     }
 }
-
 
 int main()
 {
@@ -325,6 +298,7 @@ int main()
     }
 
     auto chats = get_chats(client, client_id);
+
     if (chats.empty())
     {
         std::cout << "No chats found." << std::endl;
@@ -334,7 +308,8 @@ int main()
     int choice;
     std::cout << "Select chat to clear: ";
     std::cin >> choice;
-    delete_messages(client, client_id, chats, choice, my_user_id);
+    int64_t chat_id = chats[choice - 1] -> chat_id;
+    delete_messages(client, client_id, chat_id, my_user_id);
 
     return 0;
 }
